@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="auto">
+
+<head>
+  <%- header %>
+</head>
+
+<body id="app" v-cloak>
+  <Notification></Notification>
+  <main role="main" class="container py-4" style="max-width: 1100px;">
+    <div class="row g-4 align-items-start">
+      <div class="col-lg-7">
+        <div class="card shadow-sm">
+          <div class="card-body p-4">
+            <div class="d-flex align-items-center gap-3 mb-3">
+              <img src="./images/logo-sunshine-45.png" height="45" alt="">
+              <div>
+                <h1 class="h3 mb-1">{{ credentialsConfigured ? $t('login.title') : $t('login.setup_title') }}</h1>
+                <p class="text-muted mb-0">
+                  {{ credentialsConfigured ? $t('login.subtitle') : $t('login.setup_subtitle') }}
+                </p>
+              </div>
+            </div>
+
+            <div v-if="loading" class="alert alert-info mb-0">{{ $t('_common.loading') }}</div>
+
+            <template v-else-if="credentialsConfigured">
+              <form method="post" action="/login" autocomplete="on" @submit="submitting = true">
+                <div class="mb-3">
+                  <label for="usernameInput" class="form-label">{{ $t('_common.username') }}</label>
+                  <input
+                    id="usernameInput"
+                    v-model="loginData.username"
+                    name="username"
+                    type="text"
+                    class="form-control"
+                    autocomplete="username"
+                    autocapitalize="none"
+                    spellcheck="false"
+                    required
+                  />
+                </div>
+                <div class="mb-3">
+                  <label for="passwordInput" class="form-label">{{ $t('_common.password') }}</label>
+                  <input
+                    id="passwordInput"
+                    v-model="loginData.password"
+                    name="password"
+                    type="password"
+                    class="form-control"
+                    autocomplete="current-password"
+                    required
+                  />
+                </div>
+                <button type="submit" class="btn btn-primary w-100" :disabled="submitting">
+                  {{ $t('login.submit') }}
+                </button>
+              </form>
+            </template>
+
+            <template v-else>
+              <div class="alert alert-warning">
+                {{ $t('login.setup_warning') }}
+              </div>
+              <form @submit.prevent="submitFirstRun">
+                <div class="mb-3">
+                  <label for="newUsernameInput" class="form-label">{{ $t('_common.username') }}</label>
+                  <input
+                    id="newUsernameInput"
+                    v-model="setupData.newUsername"
+                    name="newUsername"
+                    type="text"
+                    class="form-control"
+                    autocomplete="username"
+                    autocapitalize="none"
+                    spellcheck="false"
+                    required
+                  />
+                </div>
+                <div class="mb-3">
+                  <label for="newPasswordInput" class="form-label">{{ $t('_common.password') }}</label>
+                  <input
+                    id="newPasswordInput"
+                    v-model="setupData.newPassword"
+                    name="newPassword"
+                    type="password"
+                    class="form-control"
+                    autocomplete="new-password"
+                    required
+                  />
+                </div>
+                <div class="mb-3">
+                  <label for="confirmPasswordInput" class="form-label">{{ $t('login.confirm_password') }}</label>
+                  <input
+                    id="confirmPasswordInput"
+                    v-model="setupData.confirmNewPassword"
+                    name="confirmNewPassword"
+                    type="password"
+                    class="form-control"
+                    autocomplete="new-password"
+                    required
+                  />
+                </div>
+                <button type="submit" class="btn btn-primary w-100" :disabled="submitting">
+                  {{ $t('login.create_admin') }}
+                </button>
+              </form>
+            </template>
+
+            <div class="alert alert-danger mt-3 mb-0" v-if="error">
+              <b>{{ $t('_common.error') }}</b> {{ error }}
+            </div>
+            <div class="alert alert-success mt-3 mb-0" v-if="success">
+              <b>{{ $t('_common.success') }}</b> {{ success }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-5">
+        <Resource-Card></Resource-Card>
+      </div>
+    </div>
+  </main>
+</body>
+
+<script type="module">
+  import { createApp } from 'vue'
+  import { apiFetch, getSessionState } from './fetch_utils'
+  import { initApp } from './init'
+  import Notification from './Notification.vue'
+  import ResourceCard from './ResourceCard.vue'
+
+  const app = createApp({
+    components: {
+      Notification,
+      ResourceCard,
+    },
+    data() {
+      return {
+        credentialsConfigured: true,
+        loading: true,
+        submitting: false,
+        error: null,
+        success: null,
+        loginData: {
+          username: '',
+          password: '',
+        },
+        setupData: {
+          newUsername: 'sunshine',
+          newPassword: '',
+          confirmNewPassword: '',
+        },
+      }
+    },
+    async created() {
+      const session = await getSessionState()
+      this.credentialsConfigured = session.credentials_configured
+      const loginError = new URLSearchParams(window.location.search).get('error')
+      if (loginError === 'invalid_credentials') {
+        this.error = this.$t('login.invalid_credentials')
+      } else if (loginError === 'credentials_not_configured') {
+        this.error = this.$t('login.credentials_not_configured')
+      } else if (loginError === 'login_failed') {
+        this.error = this.$t('login.login_failed')
+      }
+      this.loading = false
+    },
+    methods: {
+      async submitFirstRun() {
+        this.error = null
+        this.success = null
+        this.submitting = true
+
+        try {
+          const response = await apiFetch('./api/password', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(this.setupData),
+          })
+
+          const body = await response.json().catch(() => null)
+          if (response.ok && body?.status) {
+            this.success = this.$t('login.setup_success')
+            this.credentialsConfigured = true
+            this.loginData.username = this.setupData.newUsername
+            this.loginData.password = ''
+            this.setupData.newPassword = ''
+            this.setupData.confirmNewPassword = ''
+            return
+          }
+
+          this.error = body?.error ?? 'Unable to create admin credentials'
+        } finally {
+          this.submitting = false
+        }
+      },
+    },
+  })
+
+  initApp(app, null, { requireAuth: false, redirectAuthenticatedTo: '/' })
+</script>
+
+</html>
